@@ -1,5 +1,5 @@
-// The name of your Azure OpenAI Resource.
-const resourceName="RESOURCE_NAME"
+/ The name of your Azure OpenAI Resource.
+const resourceName="pasigpt"
 
 // The deployment name you chose when you deployed the model.
 const mapper = {
@@ -86,69 +86,47 @@ async function handleRequest(request) {
 
 }
 
-async function stream(readable, writable) {
-  const reader = readable.getReader();
-  const writer = writable.getWriter();
-
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  const delimiter = "\n\n";
-  let buffer = "";
-  let waitTime = 20; // 初始化一个基本等待时间（毫秒）
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    // 确保流的连续性，避免截断字符
-    buffer += decoder.decode(value, { stream: true });
-
-    // 使用分隔符分割缓冲区内容
-    let lines = buffer.split(delimiter);
-
-    // 对于每一行（除了可能不完整的最后一行），写入流并等待
-    for (let i = 0; i < lines.length - 1; i++) {
-      await writer.write(encoder.encode(lines[i] + delimiter));
-      // 根据缓冲区大小动态调整等待时间
-      waitTime = calculateWaitTime(lines[i]);
-      await sleep(waitTime);
-    }
-
-    // 保留未处理的数据（最后一行可能不完整）
-    buffer = lines[lines.length - 1];
-  }
-
-  // 如果缓冲区中还有剩余内容，确保写入流
-  if (buffer) {
-    await writer.write(encoder.encode(buffer + delimiter));
-  }
-  
-  // 结束写入
-  await writer.close();
-}
-
-function calculateWaitTime(line) {
-  // 基于当前行长度动态调整等待时间
-  // 等待时间与行长度成反比，行越长，等待时间越短
-  const maxWaitTime = 50; // 最大等待时间（毫秒）
-  const minWaitTime = 10; // 最小等待时间（毫秒）
-  const lineLength = line.length;
-  const threshold = 1024; // 阈值设定为1024个字符
-
-  if (lineLength > threshold) {
-    return minWaitTime; // 如果行长度超过阈值，使用最小等待时间
-  } else {
-    // 计算等待时间，使其与行长度成比例地减少
-    // 线性插值: waitTime = maxWaitTime - (lineLength/threshold) * (maxWaitTime - minWaitTime)
-    return maxWaitTime - ((lineLength / threshold) * (maxWaitTime - minWaitTime));
-  }
-}
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// support printer mode and add newline
+async function stream(readable, writable) {
+  const reader = readable.getReader();
+  const writer = writable.getWriter();
+
+  // const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+// let decodedValue = decoder.decode(value);
+  const newline = "\n";
+  const delimiter = "\n\n"
+  const encodedNewline = encoder.encode(newline);
+
+  let buffer = "";
+  while (true) {
+    let { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true }); // stream: true is important here,fix the bug of incomplete line
+    let lines = buffer.split(delimiter);
+
+    // Loop through all but the last line, which may be incomplete.
+    for (let i = 0; i < lines.length - 1; i++) {
+      await writer.write(encoder.encode(lines[i] + delimiter));
+      await sleep(20);
+    }
+
+    buffer = lines[lines.length - 1];
+  }
+
+  if (buffer) {
+    await writer.write(encoder.encode(buffer));
+  }
+  await writer.write(encodedNewline)
+  await writer.close();
+}
 
 async function handleModels(request) {
   const data = {
