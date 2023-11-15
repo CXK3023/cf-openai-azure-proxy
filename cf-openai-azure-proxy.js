@@ -1,4 +1,4 @@
-/ The name of your Azure OpenAI Resource.
+// The name of your Azure OpenAI Resource.
 const resourceName="resourceName"
 
 // The deployment name you chose when you deployed the model.
